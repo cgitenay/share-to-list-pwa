@@ -69,14 +69,21 @@
       // (vers googleusercontent.com) que le navigateur suit en la
       // transformant en GET et en supprimant son corps - le POST semblait
       // reussir cote client ("Envoye !") mais Apps Script ne recevait
-      // jamais les donnees. mode "no-cors" conserve en securite (pas
-      // besoin de lire la reponse ici, juste confirmer l'envoi).
+      // jamais les donnees.
+      //
+      // Pas de mode "no-cors" ici : ca rendait la reponse illisible et
+      // affichait "Envoye !" meme quand la requete echouait reellement
+      // (mauvaise URL, blocage...) - impossible a diagnostiquer. On lit
+      // la vraie reponse pour afficher l'erreur exacte si besoin.
       async function sendToRelay(relayUrl, content) {
         const target =
           relayUrl +
           "?action=add&type=link&content=" +
           encodeURIComponent(content);
-        await fetch(target, { mode: "no-cors" });
+        const res = await fetch(target);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (data && data.error) throw new Error(data.error);
       }
 
       async function handleShare() {
