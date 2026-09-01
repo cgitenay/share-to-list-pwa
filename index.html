@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Partager vers ma liste</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 24px 20px;
+        text-align: center;
+        color: #222;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      #status {
+        margin-top: 20px;
+        font-size: 15px;
+      }
+      input,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        margin-top: 10px;
+        font-size: 14px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+      }
+      button {
+        background: #0056a3;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Partager vers ma liste</h1>
+    <div id="setup" hidden>
+      <p>Premiere utilisation : colle l'URL de ton relais Apps Script.</p>
+      <input type="url" id="relay-url" placeholder="URL du Web App Apps Script" />
+      <button id="save-relay">Enregistrer</button>
+    </div>
+    <div id="status">Chargement...</div>
+
+    <script>
+      const STORAGE_KEY = "relayUrl";
+      const statusEl = document.getElementById("status");
+      const setupEl = document.getElementById("setup");
+      const relayInput = document.getElementById("relay-url");
+      const saveBtn = document.getElementById("save-relay");
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      }
+
+      const params = new URLSearchParams(location.search);
+      const shared = params.get("url") || params.get("text") || "";
+
+      function getRelayUrl() {
+        return localStorage.getItem(STORAGE_KEY);
+      }
+
+      // text/plain plutot que application/json : Apps Script ne repond
+      // pas au preflight OPTIONS declenche par un Content-Type "non
+      // simple", ce qui ferait echouer la requete en CORS depuis une page
+      // web classique comme celle-ci.
+      async function sendToRelay(relayUrl, content) {
+        await fetch(relayUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({ type: "link", content: content }),
+        });
+      }
+
+      async function handleShare() {
+        const relayUrl = getRelayUrl();
+        if (!relayUrl) {
+          setupEl.hidden = false;
+          statusEl.textContent = shared
+            ? "Configure d'abord le relais, puis repartage ce lien."
+            : "Configure le relais pour commencer.";
+          return;
+        }
+
+        if (!shared) {
+          statusEl.textContent = "Aucun lien recu. Ouvre cette page depuis le menu \"Partager\" d'une appli.";
+          return;
+        }
+
+        statusEl.textContent = "Envoi...";
+        try {
+          await sendToRelay(relayUrl, shared);
+          statusEl.textContent = "Envoye a la liste !";
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        }
+      }
+
+      saveBtn.addEventListener("click", () => {
+        const url = relayInput.value.trim();
+        if (!url) return;
+        localStorage.setItem(STORAGE_KEY, url);
+        setupEl.hidden = true;
+        handleShare();
+      });
+
+      handleShare();
+    </script>
+  </body>
+</html>
