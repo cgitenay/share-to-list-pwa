@@ -1,8 +1,7 @@
 # Partager vers ma liste (PWA Android)
 
 Mini page web installable qui apparait dans le menu "Partager" natif
-d'Android, et envoie le lien partage vers le relais Apps Script (voir
-`../carrefour-liste-extension/apps-script/Code.gs`) au lieu de le retaper.
+d'Android, et envoie le lien partage vers le relais Apps Script au lieu de le retaper.
 
 ## Deploiement
 
