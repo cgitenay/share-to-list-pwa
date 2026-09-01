@@ -69,8 +69,16 @@
       // simple", ce qui ferait echouer la requete en CORS depuis une page
       // web classique comme celle-ci.
       async function sendToRelay(relayUrl, content) {
+        // no-cors : Apps Script gere mal le CORS sur ses reponses (a
+        // cause de sa redirection interne vers googleusercontent.com),
+        // ce qui fait echouer un fetch() normal en "Failed to fetch"
+        // depuis une page web classique. On n'a pas besoin de lire la
+        // reponse ici (juste confirmer l'envoi), donc no-cors convient :
+        // la requete part reellement, seule la lecture du resultat est
+        // bloquee (attendu et sans consequence dans ce flux).
         await fetch(relayUrl, {
           method: "POST",
+          mode: "no-cors",
           headers: { "Content-Type": "text/plain" },
           body: JSON.stringify({ type: "link", content: content }),
         });
