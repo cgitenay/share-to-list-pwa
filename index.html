@@ -39,19 +39,22 @@
   </head>
   <body>
     <h1>Partager vers ma liste</h1>
-    <div id="setup" hidden>
-      <p>Premiere utilisation : colle l'URL de ton relais Apps Script.</p>
+    <div id="status">Chargement...</div>
+
+    <div id="setup">
+      <p>URL du relais Apps Script (verifie qu'elle est identique a celle
+      collee dans les Reglages de l'extension) :</p>
       <input type="url" id="relay-url" placeholder="URL du Web App Apps Script" />
       <button id="save-relay">Enregistrer</button>
+      <button id="test-relay">Tester (envoie un item de test)</button>
     </div>
-    <div id="status">Chargement...</div>
 
     <script>
       const STORAGE_KEY = "relayUrl";
       const statusEl = document.getElementById("status");
-      const setupEl = document.getElementById("setup");
       const relayInput = document.getElementById("relay-url");
       const saveBtn = document.getElementById("save-relay");
+      const testBtn = document.getElementById("test-relay");
 
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -96,13 +99,14 @@
         });
       }
 
+      relayInput.value = getRelayUrl() || "";
+
       async function handleShare() {
         const relayUrl = getRelayUrl();
         if (!relayUrl) {
-          setupEl.hidden = false;
           statusEl.textContent = shared
-            ? "Configure d'abord le relais, puis repartage ce lien."
-            : "Configure le relais pour commencer.";
+            ? "Configure d'abord le relais ci-dessous, puis repartage ce lien."
+            : "Configure le relais ci-dessous pour commencer.";
           return;
         }
 
@@ -124,8 +128,23 @@
         const url = relayInput.value.trim();
         if (!url) return;
         localStorage.setItem(STORAGE_KEY, url);
-        setupEl.hidden = true;
+        statusEl.textContent = "URL enregistree.";
         handleShare();
+      });
+
+      testBtn.addEventListener("click", async () => {
+        const url = relayInput.value.trim();
+        if (!url) {
+          statusEl.textContent = "Colle d'abord une URL.";
+          return;
+        }
+        statusEl.textContent = "Envoi du test...";
+        try {
+          await sendToRelay(url, "test depuis la PWA " + new Date().toLocaleTimeString("fr-FR"));
+          statusEl.textContent = "Test envoye - verifie le Google Sheet.";
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        }
       });
 
       handleShare();
