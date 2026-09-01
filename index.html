@@ -68,22 +68,32 @@
       // POST vers un Web App Apps Script traverse une redirection interne
       // (vers googleusercontent.com) que le navigateur suit en la
       // transformant en GET et en supprimant son corps - le POST semblait
-      // reussir cote client ("Envoye !") mais Apps Script ne recevait
-      // jamais les donnees.
+      // reussir cote client mais Apps Script ne recevait jamais les
+      // donnees.
       //
-      // Pas de mode "no-cors" ici : ca rendait la reponse illisible et
-      // affichait "Envoye !" meme quand la requete echouait reellement
-      // (mauvaise URL, blocage...) - impossible a diagnostiquer. On lit
-      // la vraie reponse pour afficher l'erreur exacte si besoin.
-      async function sendToRelay(relayUrl, content) {
-        const target =
-          relayUrl +
-          "?action=add&type=link&content=" +
-          encodeURIComponent(content);
-        const res = await fetch(target);
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
-        if (data && data.error) throw new Error(data.error);
+      // Meme un fetch() GET classique est bloque par le CORS sur ce
+      // meme trajet de redirection (verifie : "Failed to fetch" sur cette
+      // page, alors qu'une simple navigation dans la barre d'adresse
+      // fonctionne - la navigation n'est jamais soumise au CORS,
+      // contrairement a fetch()). On ne peut donc lire aucune reponse
+      // cross-origin ici, avec ou sans "no-cors" - c'est une limite du
+      // navigateur, pas un bug corrigeable cote code. On envoie via une
+      // requete image (jamais soumise au CORS, technique eprouvee pour
+      // "envoyer sans lire la reponse"), et on l'assume dans le message
+      // affiche : succes d'envoi confirme, succes de traitement a
+      // verifier dans la liste partagee/le Sheet.
+      function sendToRelay(relayUrl, content) {
+        return new Promise((resolve) => {
+          const target =
+            relayUrl +
+            "?action=add&type=link&content=" +
+            encodeURIComponent(content);
+          const img = new Image();
+          img.onload = () => resolve();
+          img.onerror = () => resolve(); // reponse JSON, pas une image : attendu, pas un echec
+          img.src = target;
+          setTimeout(resolve, 4000); // filet de securite
+        });
       }
 
       async function handleShare() {
@@ -104,7 +114,7 @@
         statusEl.textContent = "Envoi...";
         try {
           await sendToRelay(relayUrl, shared);
-          statusEl.textContent = "Envoye a la liste !";
+          statusEl.textContent = "Envoye - verifie ta liste partagee pour confirmer.";
         } catch (err) {
           statusEl.textContent = "Erreur : " + err.message;
         }
