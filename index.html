@@ -35,26 +35,80 @@
         border: none;
         cursor: pointer;
       }
+      h2 {
+        font-size: 15px;
+        text-align: left;
+        margin: 24px 0 4px;
+      }
+      #current-list {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        text-align: left;
+      }
+      #current-list li {
+        padding: 8px 10px;
+        border: 1px solid #eee;
+        border-radius: 6px;
+        margin-top: 6px;
+        font-size: 14px;
+        word-break: break-word;
+      }
+      #add-item-row {
+        display: flex;
+        gap: 8px;
+      }
+      #add-item-row input {
+        margin-top: 0;
+      }
+      #add-item-row button {
+        margin-top: 0;
+        width: auto;
+        flex-shrink: 0;
+        padding: 10px 16px;
+      }
+      details {
+        margin-top: 24px;
+        text-align: left;
+      }
+      details summary {
+        cursor: pointer;
+        font-size: 14px;
+        color: #555;
+      }
     </style>
   </head>
   <body>
     <h1>Partager vers ma liste</h1>
     <div id="status">Chargement...</div>
 
-    <div id="setup">
+    <h2>Ma liste actuelle</h2>
+    <button id="refresh-list">Actualiser</button>
+    <ul id="current-list"></ul>
+
+    <h2>Ajouter un article</h2>
+    <div id="add-item-row">
+      <input type="text" id="new-item" placeholder="Ex: lait, 2x oeufs..." />
+      <button id="add-item">Ajouter</button>
+    </div>
+
+    <details id="setup">
+      <summary>Reglages du relais</summary>
       <p>URL du relais Apps Script (verifie qu'elle est identique a celle
       collee dans les Reglages de l'extension) :</p>
       <input type="url" id="relay-url" placeholder="URL du Web App Apps Script" />
       <button id="save-relay">Enregistrer</button>
-      <button id="test-relay">Tester (envoie un item de test)</button>
-    </div>
+    </details>
 
     <script>
       const STORAGE_KEY = "relayUrl";
       const statusEl = document.getElementById("status");
       const relayInput = document.getElementById("relay-url");
       const saveBtn = document.getElementById("save-relay");
-      const testBtn = document.getElementById("test-relay");
+      const currentListEl = document.getElementById("current-list");
+      const refreshListBtn = document.getElementById("refresh-list");
+      const newItemInput = document.getElementById("new-item");
+      const addItemBtn = document.getElementById("add-item");
 
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -85,12 +139,12 @@
       // "envoyer sans lire la reponse"), et on l'assume dans le message
       // affiche : succes d'envoi confirme, succes de traitement a
       // verifier dans la liste partagee/le Sheet.
-      function sendToRelay(relayUrl, content) {
+      function sendToRelay(relayUrl, content, type) {
         return new Promise((resolve) => {
           const target =
             relayUrl +
-            "?action=add&type=link&content=" +
-            encodeURIComponent(content);
+            "?action=add&type=" + encodeURIComponent(type || "link") +
+            "&content=" + encodeURIComponent(content);
           const img = new Image();
           img.onload = () => resolve();
           img.onerror = () => resolve(); // reponse JSON, pas une image : attendu, pas un echec
@@ -98,6 +152,90 @@
           setTimeout(resolve, 4000); // filet de securite
         });
       }
+
+      // Lecture de la liste : contrairement a l'envoi, il faut ici
+      // pouvoir lire une vraie reponse (le contenu de la liste), pas
+      // juste confirmer un envoi a l'aveugle. Une balise <script src>
+      // n'est jamais soumise au CORS (comme les images), donc on utilise
+      // le classique JSONP : Apps Script renvoie "callback([...]);" en
+      // JavaScript plutot que du JSON brut, execute directement au
+      // chargement du script.
+      function fetchListViaJsonp(relayUrl) {
+        return new Promise((resolve, reject) => {
+          const callbackName = "cdlistCb" + Date.now();
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error("Timeout"));
+          }, 8000);
+
+          function cleanup() {
+            delete window[callbackName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+            clearTimeout(timeout);
+          }
+
+          window[callbackName] = (data) => {
+            cleanup();
+            resolve(data);
+          };
+
+          const script = document.createElement("script");
+          script.src = relayUrl + "?action=list&callback=" + callbackName;
+          script.onerror = () => {
+            cleanup();
+            reject(new Error("Erreur de chargement"));
+          };
+          document.body.appendChild(script);
+        });
+      }
+
+      async function refreshCurrentList() {
+        const relayUrl = getRelayUrl();
+        if (!relayUrl) {
+          currentListEl.innerHTML = "<li>Configure d'abord le relais ci-dessous.</li>";
+          return;
+        }
+        currentListEl.innerHTML = "<li>Chargement...</li>";
+        try {
+          const rows = await fetchListViaJsonp(relayUrl);
+          if (!rows || rows.length === 0) {
+            currentListEl.innerHTML = "<li>Rien en attente.</li>";
+            return;
+          }
+          currentListEl.innerHTML = "";
+          rows.forEach((r) => {
+            const li = document.createElement("li");
+            li.textContent = (r.type === "link" ? "🔗 " : "🛒 ") + r.content;
+            currentListEl.appendChild(li);
+          });
+        } catch (err) {
+          currentListEl.innerHTML = "<li>Erreur : " + err.message + "</li>";
+        }
+      }
+
+      refreshListBtn.addEventListener("click", refreshCurrentList);
+
+      addItemBtn.addEventListener("click", async () => {
+        const relayUrl = getRelayUrl();
+        const text = newItemInput.value.trim();
+        if (!relayUrl) {
+          statusEl.textContent = "Configure d'abord le relais ci-dessous.";
+          return;
+        }
+        if (!text) return;
+
+        addItemBtn.disabled = true;
+        try {
+          await sendToRelay(relayUrl, text, "item");
+          newItemInput.value = "";
+          statusEl.textContent = "Article ajoute.";
+          refreshCurrentList();
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        } finally {
+          addItemBtn.disabled = false;
+        }
+      });
 
       relayInput.value = getRelayUrl() || "";
 
@@ -130,24 +268,11 @@
         localStorage.setItem(STORAGE_KEY, url);
         statusEl.textContent = "URL enregistree.";
         handleShare();
-      });
-
-      testBtn.addEventListener("click", async () => {
-        const url = relayInput.value.trim();
-        if (!url) {
-          statusEl.textContent = "Colle d'abord une URL.";
-          return;
-        }
-        statusEl.textContent = "Envoi du test...";
-        try {
-          await sendToRelay(url, "test depuis la PWA " + new Date().toLocaleTimeString("fr-FR"));
-          statusEl.textContent = "Test envoye - verifie le Google Sheet.";
-        } catch (err) {
-          statusEl.textContent = "Erreur : " + err.message;
-        }
+        refreshCurrentList();
       });
 
       handleShare();
+      refreshCurrentList();
     </script>
   </body>
 </html>
