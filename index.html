@@ -64,24 +64,19 @@
         return localStorage.getItem(STORAGE_KEY);
       }
 
-      // text/plain plutot que application/json : Apps Script ne repond
-      // pas au preflight OPTIONS declenche par un Content-Type "non
-      // simple", ce qui ferait echouer la requete en CORS depuis une page
-      // web classique comme celle-ci.
+      // GET avec les donnees dans l'URL plutot que POST : une requete
+      // POST vers un Web App Apps Script traverse une redirection interne
+      // (vers googleusercontent.com) que le navigateur suit en la
+      // transformant en GET et en supprimant son corps - le POST semblait
+      // reussir cote client ("Envoye !") mais Apps Script ne recevait
+      // jamais les donnees. mode "no-cors" conserve en securite (pas
+      // besoin de lire la reponse ici, juste confirmer l'envoi).
       async function sendToRelay(relayUrl, content) {
-        // no-cors : Apps Script gere mal le CORS sur ses reponses (a
-        // cause de sa redirection interne vers googleusercontent.com),
-        // ce qui fait echouer un fetch() normal en "Failed to fetch"
-        // depuis une page web classique. On n'a pas besoin de lire la
-        // reponse ici (juste confirmer l'envoi), donc no-cors convient :
-        // la requete part reellement, seule la lecture du resultat est
-        // bloquee (attendu et sans consequence dans ce flux).
-        await fetch(relayUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify({ type: "link", content: content }),
-        });
+        const target =
+          relayUrl +
+          "?action=add&type=link&content=" +
+          encodeURIComponent(content);
+        await fetch(target, { mode: "no-cors" });
       }
 
       async function handleShare() {
