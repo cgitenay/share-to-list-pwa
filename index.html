@@ -98,6 +98,15 @@
         text-decoration: none;
         font-size: 14px;
       }
+      #group-section {
+        margin-top: 24px;
+        text-align: left;
+      }
+      #group-section summary {
+        font-size: 15px;
+        font-weight: bold;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -109,16 +118,6 @@
       <div id="auth-status">Non connecte.</div>
       <button id="sign-in">Se connecter avec Google</button>
       <button id="sign-out" class="secondary" hidden>Se deconnecter</button>
-    </section>
-
-    <section id="group-section" hidden>
-      <h2>Groupe</h2>
-      <select id="group-select"></select>
-      <button id="create-group">Creer un nouveau groupe</button>
-      <input type="text" id="join-code" placeholder="Code d'invitation" />
-      <button id="join-group">Rejoindre avec ce code</button>
-      <button id="invite-btn" class="secondary">Generer un code d'invitation</button>
-      <div id="invite-code-display"></div>
     </section>
 
     <section>
@@ -136,6 +135,16 @@
     </section>
 
     <a class="new-recipe" href="recipes.html">📖 Mes recettes</a>
+
+    <details id="group-section" hidden>
+      <summary>Groupe</summary>
+      <select id="group-select"></select>
+      <button id="create-group">Creer un nouveau groupe</button>
+      <input type="text" id="join-code" placeholder="Code d'invitation" />
+      <button id="join-group">Rejoindre avec ce code</button>
+      <button id="invite-btn" class="secondary">Generer un code d'invitation</button>
+      <div id="invite-code-display"></div>
+    </details>
 
     <script src="matcher.js"></script>
     <script type="module">
