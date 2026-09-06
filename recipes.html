@@ -148,7 +148,7 @@
             addBtn.addEventListener("click", async () => {
               addBtn.disabled = true;
               try {
-                await addRecipeIngredientsToList(groupId, user, ingredients);
+                await addRecipeIngredientsToList(groupId, user, ingredients, recipe);
                 addBtn.textContent = "Ajoute !";
               } catch (err) {
                 statusEl.textContent = "Erreur : " + err.message;

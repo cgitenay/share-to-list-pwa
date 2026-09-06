@@ -43,7 +43,11 @@ export async function listRecipes(groupId) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function addRecipeIngredientsToList(groupId, user, ingredients) {
+// Le nom/id de la recette est recopie sur chaque article (denormalise)
+// pour permettre a la page d'accueil d'afficher "quelles recettes
+// composent la liste en cours" sans lecture supplementaire - elle lit de
+// toute facon deja tous les articles "pending" pour les afficher.
+export async function addRecipeIngredientsToList(groupId, user, ingredients, recipe) {
   const ref = collection(db, "groups", groupId, "shoppingItems");
   for (const ingredient of ingredients) {
     await addDoc(ref, {
@@ -52,6 +56,8 @@ export async function addRecipeIngredientsToList(groupId, user, ingredients) {
       status: "pending",
       addedBy: user.uid,
       createdAt: serverTimestamp(),
+      sourceRecipeId: recipe ? recipe.id : null,
+      sourceRecipeName: recipe ? recipe.name : null,
     });
   }
 }

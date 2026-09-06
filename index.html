@@ -65,6 +65,20 @@
         font-size: 14px;
         word-break: break-word;
       }
+      #list-recipes {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        text-align: left;
+      }
+      #list-recipes li {
+        padding: 6px 10px;
+        border: 1px solid #eee;
+        border-radius: 6px;
+        margin-top: 6px;
+        font-size: 13px;
+        font-weight: bold;
+      }
       #add-item-row {
         display: flex;
         gap: 8px;
@@ -118,6 +132,11 @@
       <div id="auth-status">Non connecte.</div>
       <button id="sign-in">Se connecter avec Google</button>
       <button id="sign-out" class="secondary" hidden>Se deconnecter</button>
+    </section>
+
+    <section id="list-recipes-section" hidden>
+      <h2>Recettes de cette liste</h2>
+      <ul id="list-recipes"></ul>
     </section>
 
     <section>
@@ -189,6 +208,8 @@
       const inviteBtn = document.getElementById("invite-btn");
       const inviteCodeDisplay = document.getElementById("invite-code-display");
       const currentListEl = document.getElementById("current-list");
+      const listRecipesSectionEl = document.getElementById("list-recipes-section");
+      const listRecipesEl = document.getElementById("list-recipes");
       const refreshListBtn = document.getElementById("refresh-list");
       const newItemInput = document.getElementById("new-item");
       const addItemBtn = document.getElementById("add-item");
@@ -222,10 +243,32 @@
         });
       }
 
+      // Affiche, sous forme de liste distincte, les recettes dont au moins
+      // un ingredient est encore "pending" dans la liste de courses -
+      // sourceRecipeName est recopie sur chaque article par
+      // addRecipeIngredientsToList() (recipes.js), pas besoin d'une
+      // lecture Firestore supplementaire ici.
+      function renderListRecipes(items) {
+        const names = new Set(items.map((r) => r.sourceRecipeName).filter(Boolean));
+        if (names.size === 0) {
+          listRecipesSectionEl.hidden = true;
+          listRecipesEl.innerHTML = "";
+          return;
+        }
+        listRecipesSectionEl.hidden = false;
+        listRecipesEl.innerHTML = "";
+        names.forEach((name) => {
+          const li = document.createElement("li");
+          li.textContent = "📖 " + name;
+          listRecipesEl.appendChild(li);
+        });
+      }
+
       async function refreshCurrentList() {
         const groupId = getActiveGroupId();
         if (!auth.currentUser || !groupId) {
           currentListEl.innerHTML = "<li>Connecte-toi et choisis un groupe.</li>";
+          listRecipesSectionEl.hidden = true;
           return;
         }
         currentListEl.innerHTML = "<li>Chargement...</li>";
@@ -233,13 +276,15 @@
           const snap = await getDocs(
             query(shoppingItemsRef(groupId), where("status", "==", "pending"))
           );
+          const items = snap.docs.map((d) => d.data());
+          renderListRecipes(items);
+
           if (snap.empty) {
             currentListEl.innerHTML = "<li>Rien en attente.</li>";
             return;
           }
           currentListEl.innerHTML = "";
-          snap.forEach((d) => {
-            const r = d.data();
+          items.forEach((r) => {
             const li = document.createElement("li");
             li.textContent = (r.type === "link" ? "🔗 " : "🛒 ") + r.content;
             currentListEl.appendChild(li);
