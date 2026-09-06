@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recette</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 24px 20px;
+        color: #222;
+      }
+      h1 {
+        font-size: 18px;
+        text-align: center;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 14px;
+        text-align: center;
+      }
+      label {
+        display: block;
+        margin-top: 16px;
+        font-size: 13px;
+        color: #555;
+      }
+      input,
+      textarea,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        margin-top: 6px;
+        font-size: 14px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+      }
+      textarea {
+        height: 200px;
+        resize: vertical;
+      }
+      button {
+        margin-top: 20px;
+        background: #0056a3;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #9bb7ce;
+        cursor: default;
+      }
+      a.back {
+        display: inline-block;
+        margin-top: 16px;
+        font-size: 13px;
+        color: #555;
+      }
+      p.hint {
+        font-size: 11px;
+        color: #777;
+        margin: 4px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Recette</h1>
+    <div id="status"></div>
+
+    <label for="recipe-name">Nom de la recette</label>
+    <input type="text" id="recipe-name" placeholder="Ex: Pates à la carbonara" />
+
+    <label for="recipe-ingredients">Ingredients (un par ligne)</label>
+    <textarea id="recipe-ingredients" placeholder="200g de pates&#10;2 oeufs&#10;100g de parmesan"></textarea>
+    <p class="hint">Modifie/complete librement avant d'enregistrer.</p>
+
+    <button id="save-recipe">Enregistrer</button>
+    <a class="back" href="recipes.html">&larr; Mes recettes</a>
+
+    <script type="module">
+      import { auth } from "./firebase-init.js";
+      import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+      import { getActiveGroupId } from "./groups.js";
+      import { saveRecipe } from "./recipes.js";
+
+      const DRAFT_KEY = "recipeDraft";
+      const statusEl = document.getElementById("status");
+      const nameInput = document.getElementById("recipe-name");
+      const ingredientsTextarea = document.getElementById("recipe-ingredients");
+      const saveBtn = document.getElementById("save-recipe");
+
+      let sourceUrl = null;
+
+      // Pre-remplissage depuis une extraction faite par index.html (lien
+      // partage) - stocke via localStorage plutot que des parametres
+      // d'URL, une liste d'ingredients pouvant depasser la longueur
+      // raisonnable d'une URL.
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          nameInput.value = draft.name || "";
+          ingredientsTextarea.value = (draft.ingredients || []).join("\n");
+          sourceUrl = draft.sourceUrl || null;
+          if (draft.message) statusEl.textContent = draft.message;
+          localStorage.removeItem(DRAFT_KEY);
+        }
+      } catch (err) {
+        // Brouillon corrompu/absent - formulaire vide, rien de grave.
+      }
+
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          statusEl.textContent = "Connecte-toi depuis la page d'accueil pour enregistrer une recette.";
+          saveBtn.disabled = true;
+        }
+      });
+
+      saveBtn.addEventListener("click", async () => {
+        const user = auth.currentUser;
+        const groupId = getActiveGroupId();
+        if (!user) {
+          statusEl.textContent = "Connecte-toi d'abord.";
+          return;
+        }
+        if (!groupId) {
+          statusEl.textContent = "Cree ou rejoins un groupe d'abord (page d'accueil).";
+          return;
+        }
+
+        const ingredients = ingredientsTextarea.value
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean);
+        if (ingredients.length === 0) {
+          statusEl.textContent = "Ajoute au moins un ingredient.";
+          return;
+        }
+
+        saveBtn.disabled = true;
+        statusEl.textContent = "Enregistrement...";
+        try {
+          await saveRecipe(groupId, user, { name: nameInput.value, ingredients, sourceUrl });
+          location.href = "recipes.html";
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+          saveBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

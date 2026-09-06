@@ -1,10 +1,11 @@
 # Partager vers ma liste (PWA Android)
 
 Mini page web installable qui apparait dans le menu "Partager" natif
-d'Android, et envoie le lien partage directement dans Firestore (meme
-backend que l'extension) - voir
-`carrefour-liste-extension/FIREBASE_SETUP.md` pour la mise en place du
-projet Firebase, commune aux deux.
+d'Android : un lien de recette declenche l'extraction automatique des
+ingredients (voir "Recettes" ci-dessous), un texte simple s'ajoute
+directement a la liste de courses. Meme backend que l'extension
+(Firestore) - voir `carrefour-liste-extension/FIREBASE_SETUP.md` pour la
+mise en place du projet Firebase, commune aux deux.
 
 ## Deploiement
 
@@ -32,9 +33,32 @@ simple et gratuit : GitHub Pages.
    (`localStorage`, propre a cet appareil/navigateur).
 4. Depuis n'importe quelle appli (Instagram, TikTok, YouTube, navigateur...),
    utilise "Partager" sur une video/un lien -> choisis "Partager vers ma
-   liste" dans la liste - le lien est envoye directement dans Firestore
-   (il apparaitra "en attente" dans le popup de l'extension au prochain
-   sync).
+   liste" dans la liste - l'appli tente d'extraire automatiquement le nom
+   et les ingredients de la recette, puis ouvre un formulaire pour les
+   revoir/completer avant d'enregistrer (voir "Recettes" ci-dessous).
+
+## Recettes
+
+Partager un lien (TikTok, YouTube, ou un site avec des donnees de recette
+structurees comme Marmiton) ouvre un formulaire pre-rempli (nom +
+ingredients, un par ligne, modifiables) - "Enregistrer" l'ajoute a "Mes
+recettes". Chaque recette enregistree a un bouton "Ajouter a la liste de
+courses" qui recopie tous ses ingredients dans la liste partagee. Une
+recette peut aussi etre creee entierement a la main depuis "Mes recettes"
+-> "+ Nouvelle recette".
+
+**Mise en place obligatoire** : l'extraction depuis YouTube et les sites
+de recettes passe par un petit relais Google Apps Script (une page web ne
+peut pas lire le HTML d'un site externe directement - CORS - contrairement
+a l'extension qui a une permission d'hote). TikTok fonctionne sans ce
+relais (son oEmbed public autorise deja les appels cross-origin).
+
+1. https://script.google.com/ -> Nouveau projet -> colle le contenu de
+   `carrefour-liste-extension/apps-script/Code.gs`.
+2. Deployer -> Nouveau deploiement -> type "Application Web" - Executer en
+   tant que "Moi", acces "Tous".
+3. Copie l'URL de deploiement fournie, colle-la dans `recipes.js`,
+   constante `PROXY_URL` (remplace `TODO_APPS_SCRIPT_PROXY_URL`).
 
 ## iPhone
 
@@ -52,10 +76,14 @@ que Android).
   l'appareil (`localStorage`) - a refaire (connexion + selection du
   groupe) si tu changes de telephone/navigateur ou vides les donnees du
   site.
-- `signInWithRedirect` a des bugs connus sous Safari iOS en PWA installee
-  (cloisonnement de stockage ITP) - non teste faute d'iPhone disponible ;
-  si la connexion echoue systematiquement sur iPhone, ouvrir la page dans
-  Safari (hors PWA installee) en contournement possible.
+- La connexion utilise `signInWithPopup` (une fenetre popup Google) - non
+  teste sur Safari iOS faute d'iPhone disponible ; les popups peuvent etre
+  moins fiables que sur desktop selon la version d'iOS.
+- L'extraction de recette est "au mieux" : TikTok/YouTube dependent de la
+  legende/description fournie par le createur (voir les heuristiques dans
+  `matcher.js`), les sites sans donnees structurees schema.org/Recipe ne
+  renvoient aucun ingredient automatiquement - le formulaire s'ouvre vide
+  dans ce cas, a completer a la main.
 - **Confirme sur Android/Chrome** : Google bloque volontairement
   l'affichage de son ecran de connexion dans une PWA installee en mode
   standalone (mesure anti-phishing) - la page de connexion se coupe

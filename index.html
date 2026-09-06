@@ -87,6 +87,17 @@
         font-weight: bold;
         word-break: break-all;
       }
+      a.new-recipe {
+        display: block;
+        text-align: center;
+        margin-top: 24px;
+        padding: 10px;
+        border-radius: 6px;
+        background: #2f8f4e;
+        color: #fff;
+        text-decoration: none;
+        font-size: 14px;
+      }
     </style>
   </head>
   <body>
@@ -124,6 +135,9 @@
       </div>
     </section>
 
+    <a class="new-recipe" href="recipes.html">📖 Mes recettes</a>
+
+    <script src="matcher.js"></script>
     <script type="module">
       import { auth, db } from "./firebase-init.js";
       import {
@@ -149,8 +163,10 @@
         getActiveGroupId,
         setActiveGroupId,
       } from "./groups.js";
+      import { extractRecipeFromUrl } from "./recipe-extractor.js";
 
       const PENDING_SHARE_KEY = "pendingShare";
+      const RECIPE_DRAFT_KEY = "recipeDraft";
 
       const statusEl = document.getElementById("status");
       const authStatusEl = document.getElementById("auth-status");
@@ -248,13 +264,27 @@
         }
       });
 
+      function looksLikeUrl(str) {
+        try {
+          const u = new URL(str.trim());
+          return u.protocol === "http:" || u.protocol === "https:";
+        } catch (err) {
+          return false;
+        }
+      }
+
+      // Un lien partage declenche desormais l'extraction de recette
+      // (nom + ingredients) et ouvre le formulaire de revue/enregistrement,
+      // plutot que d'etre simplement mis en attente pour l'extension - le
+      // partage d'un simple texte (pas une URL) reste ajoute directement a
+      // la liste de courses.
       async function handleShare() {
         const shared = localStorage.getItem(PENDING_SHARE_KEY);
         const groupId = getActiveGroupId();
 
         if (!auth.currentUser) {
           statusEl.textContent = shared
-            ? "Connecte-toi avec Google ci-dessous, puis reviens ici pour envoyer ce lien."
+            ? "Connecte-toi avec Google ci-dessous, puis reviens ici pour traiter ce partage."
             : "Connecte-toi avec Google pour commencer.";
           return;
         }
@@ -267,11 +297,32 @@
           return;
         }
 
+        if (looksLikeUrl(shared)) {
+          statusEl.textContent = "Extraction de la recette...";
+          const result = await extractRecipeFromUrl(shared);
+          localStorage.removeItem(PENDING_SHARE_KEY);
+          localStorage.setItem(
+            RECIPE_DRAFT_KEY,
+            JSON.stringify({
+              name: result.ok ? result.name : null,
+              ingredients: result.ok && result.ingredients ? result.ingredients : [],
+              sourceUrl: shared,
+              message: result.ok
+                ? result.ingredients
+                  ? null
+                  : "Rien detecte automatiquement - complete les ingredients a la main."
+                : result.message,
+            })
+          );
+          location.href = "recipe-form.html";
+          return;
+        }
+
         statusEl.textContent = "Envoi...";
         try {
-          await addSharedItem(groupId, auth.currentUser, "link", shared);
+          await addSharedItem(groupId, auth.currentUser, "item", shared);
           localStorage.removeItem(PENDING_SHARE_KEY);
-          statusEl.textContent = "Envoye - visible dans ta liste ci-dessous et dans l'extension.";
+          statusEl.textContent = "Envoye - visible dans ta liste ci-dessous.";
           refreshCurrentList();
         } catch (err) {
           statusEl.textContent = "Erreur : " + err.message;

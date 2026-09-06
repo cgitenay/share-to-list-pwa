@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mes recettes</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 24px 20px;
+        color: #222;
+      }
+      h1 {
+        font-size: 18px;
+        text-align: center;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 14px;
+        text-align: center;
+      }
+      a.new-recipe {
+        display: block;
+        text-align: center;
+        margin-top: 16px;
+        padding: 10px;
+        border-radius: 6px;
+        background: #0056a3;
+        color: #fff;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      a.back {
+        display: inline-block;
+        margin-top: 16px;
+        font-size: 13px;
+        color: #555;
+      }
+      ul {
+        list-style: none;
+        margin: 16px 0 0;
+        padding: 0;
+      }
+      li {
+        padding: 12px;
+        border: 1px solid #eee;
+        border-radius: 6px;
+        margin-top: 8px;
+      }
+      .recipe-name {
+        font-weight: bold;
+        font-size: 15px;
+      }
+      .recipe-count {
+        font-size: 12px;
+        color: #777;
+        margin-top: 2px;
+      }
+      .recipe-ingredients {
+        font-size: 12px;
+        color: #555;
+        margin-top: 6px;
+        word-break: break-word;
+      }
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        margin-top: 8px;
+        font-size: 13px;
+        border-radius: 6px;
+        border: none;
+        background: #2f8f4e;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #9bbfa8;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mes recettes</h1>
+    <div id="status">Chargement...</div>
+    <a class="new-recipe" href="recipe-form.html">+ Nouvelle recette</a>
+    <ul id="recipe-list"></ul>
+    <a class="back" href="index.html">&larr; Retour</a>
+
+    <script type="module">
+      import { auth } from "./firebase-init.js";
+      import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+      import { getActiveGroupId } from "./groups.js";
+      import { listRecipes, addRecipeIngredientsToList } from "./recipes.js";
+
+      const statusEl = document.getElementById("status");
+      const listEl = document.getElementById("recipe-list");
+
+      async function refresh() {
+        const user = auth.currentUser;
+        const groupId = getActiveGroupId();
+        if (!user) {
+          statusEl.textContent = "Connecte-toi depuis la page d'accueil.";
+          return;
+        }
+        if (!groupId) {
+          statusEl.textContent = "Cree ou rejoins un groupe d'abord (page d'accueil).";
+          return;
+        }
+
+        statusEl.textContent = "Chargement...";
+        try {
+          const recipes = await listRecipes(groupId);
+          listEl.innerHTML = "";
+          if (recipes.length === 0) {
+            statusEl.textContent = "Aucune recette enregistree pour l'instant.";
+            return;
+          }
+          statusEl.textContent = "";
+          recipes.forEach((recipe) => {
+            const li = document.createElement("li");
+
+            const nameEl = document.createElement("div");
+            nameEl.className = "recipe-name";
+            nameEl.textContent = recipe.name;
+            li.appendChild(nameEl);
+
+            const countEl = document.createElement("div");
+            countEl.className = "recipe-count";
+            const ingredients = recipe.ingredients || [];
+            countEl.textContent = ingredients.length + " ingredient(s)";
+            li.appendChild(countEl);
+
+            const ingredientsEl = document.createElement("div");
+            ingredientsEl.className = "recipe-ingredients";
+            ingredientsEl.textContent = ingredients.join(", ");
+            li.appendChild(ingredientsEl);
+
+            const addBtn = document.createElement("button");
+            addBtn.textContent = "Ajouter a la liste de courses";
+            addBtn.addEventListener("click", async () => {
+              addBtn.disabled = true;
+              try {
+                await addRecipeIngredientsToList(groupId, user, ingredients);
+                addBtn.textContent = "Ajoute !";
+              } catch (err) {
+                statusEl.textContent = "Erreur : " + err.message;
+                addBtn.disabled = false;
+              }
+            });
+            li.appendChild(addBtn);
+
+            listEl.appendChild(li);
+          });
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        }
+      }
+
+      onAuthStateChanged(auth, refresh);
+    </script>
+  </body>
+</html>
