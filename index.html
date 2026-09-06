@@ -58,12 +58,46 @@
         text-align: left;
       }
       #current-list li {
-        padding: 8px 10px;
-        border: 1px solid #eee;
+        position: relative;
+        overflow: hidden;
         border-radius: 6px;
         margin-top: 6px;
         font-size: 14px;
+      }
+      .swipe-bg {
+        position: absolute;
+        inset: 0;
+        background: #d9534f;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 16px;
+        font-size: 16px;
+      }
+      .swipe-content {
+        position: relative;
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 6px;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
         word-break: break-word;
+        touch-action: pan-y;
+      }
+      .delete-btn {
+        background: none;
+        border: none;
+        color: #d9534f;
+        font-size: 16px;
+        padding: 0 0 0 8px;
+        margin: 0;
+        width: auto;
+        flex-shrink: 0;
+        cursor: pointer;
       }
       #list-recipes {
         list-style: none;
@@ -179,6 +213,8 @@
       import {
         collection,
         addDoc,
+        deleteDoc,
+        doc,
         getDocs,
         query,
         where,
@@ -245,6 +281,51 @@
         });
       }
 
+      function deleteSharedItem(groupId, itemId) {
+        return deleteDoc(doc(db, "groups", groupId, "shoppingItems", itemId));
+      }
+
+      // Balayage vers la gauche (tactile) pour supprimer un article, avec
+      // un bouton 🗑 en secours (le balayage ne fonctionne qu'au toucher,
+      // pas a la souris). onDelete est appele une fois le balayage confirme
+      // (au-dela du seuil) ou le bouton clique.
+      function attachSwipeToDelete(li, contentEl, onDelete) {
+        const threshold = 70;
+        let startX = null;
+        let currentX = 0;
+
+        contentEl.addEventListener(
+          "touchstart",
+          (e) => {
+            startX = e.touches[0].clientX;
+            contentEl.style.transition = "none";
+          },
+          { passive: true }
+        );
+
+        contentEl.addEventListener(
+          "touchmove",
+          (e) => {
+            if (startX === null) return;
+            currentX = Math.max(Math.min(0, e.touches[0].clientX - startX), -120);
+            contentEl.style.transform = "translateX(" + currentX + "px)";
+          },
+          { passive: true }
+        );
+
+        contentEl.addEventListener("touchend", () => {
+          contentEl.style.transition = "transform 0.2s ease";
+          if (currentX < -threshold) {
+            contentEl.style.transform = "translateX(-100%)";
+            setTimeout(onDelete, 180);
+          } else {
+            contentEl.style.transform = "translateX(0)";
+          }
+          startX = null;
+          currentX = 0;
+        });
+      }
+
       // Affiche, sous forme de liste distincte, les recettes dont au moins
       // un ingredient est encore "pending" dans la liste de courses -
       // sourceRecipeName est recopie sur chaque article par
@@ -278,7 +359,7 @@
           const snap = await getDocs(
             query(shoppingItemsRef(groupId), where("status", "==", "pending"))
           );
-          const items = snap.docs.map((d) => d.data());
+          const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           renderListRecipes(items);
 
           if (snap.empty) {
@@ -288,8 +369,42 @@
           currentListEl.innerHTML = "";
           items.forEach((r) => {
             const li = document.createElement("li");
-            li.textContent = (r.type === "link" ? "🔗 " : "🛒 ") + r.content;
+
+            const bg = document.createElement("div");
+            bg.className = "swipe-bg";
+            bg.textContent = "🗑";
+            li.appendChild(bg);
+
+            const contentEl = document.createElement("div");
+            contentEl.className = "swipe-content";
+
+            const textEl = document.createElement("span");
+            textEl.textContent = (r.type === "link" ? "🔗 " : "🛒 ") + r.content;
+            contentEl.appendChild(textEl);
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.className = "delete-btn";
+            deleteBtn.textContent = "🗑";
+            contentEl.appendChild(deleteBtn);
+
+            li.appendChild(contentEl);
             currentListEl.appendChild(li);
+
+            const removeItem = async () => {
+              try {
+                await deleteSharedItem(groupId, r.id);
+                li.remove();
+                renderListRecipes(items.filter((i) => i.id !== r.id));
+                if (!currentListEl.querySelector("li")) {
+                  currentListEl.innerHTML = "<li>Rien en attente.</li>";
+                }
+              } catch (err) {
+                statusEl.textContent = "Erreur : " + err.message;
+              }
+            };
+
+            deleteBtn.addEventListener("click", removeItem);
+            attachSwipeToDelete(li, contentEl, removeItem);
           });
         } catch (err) {
           currentListEl.innerHTML = "<li>Erreur : " + err.message + "</li>";
