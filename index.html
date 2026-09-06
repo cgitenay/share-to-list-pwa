@@ -128,8 +128,7 @@
       import { auth, db } from "./firebase-init.js";
       import {
         GoogleAuthProvider,
-        signInWithRedirect,
-        getRedirectResult,
+        signInWithPopup,
         onAuthStateChanged,
         signOut,
       } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
@@ -348,12 +347,24 @@
           return;
         }
 
+        // signInWithRedirect a ete abandonne : son retour repose sur une
+        // iframe cachee cross-origin (authDomain firebaseapp.com != domaine
+        // d'hebergement github.io) pour relayer le resultat, bloquee
+        // silencieusement par le partitionnement du stockage tiers des
+        // navigateurs recents (echec confirme sur Chrome ET Brave, sans
+        // aucune erreur visible). signInWithPopup communique directement
+        // entre la fenetre popup et la page, sans ce relais fragile.
         signInBtn.disabled = true;
-        statusEl.textContent = "Redirection vers Google...";
+        statusEl.textContent = "Connexion...";
         try {
-          await signInWithRedirect(auth, new GoogleAuthProvider());
+          await signInWithPopup(auth, new GoogleAuthProvider());
+          await refreshAuthUI();
+          statusEl.textContent = "Connecte.";
+          handleShare();
+          refreshCurrentList();
         } catch (err) {
-          statusEl.textContent = "Erreur de connexion : " + err.message;
+          statusEl.textContent = "Erreur de connexion (" + err.code + ") : " + err.message;
+        } finally {
           signInBtn.disabled = false;
         }
       });
@@ -429,28 +440,15 @@
         }
       });
 
-      (async () => {
-        let redirectError = null;
-        try {
-          await getRedirectResult(auth);
-        } catch (err) {
-          redirectError = err;
-        }
-
-        onAuthStateChanged(auth, async (user) => {
-          await refreshAuthUI();
-          // Ne pas laisser handleShare() ecraser un message d'erreur reel
-          // de la redirection avec son texte generique "Connecte-toi...".
-          if (redirectError) {
-            statusEl.textContent =
-              "Erreur de connexion (" + redirectError.code + ") : " + redirectError.message;
-            redirectError = null;
-            return;
-          }
-          handleShare();
-          if (user) refreshCurrentList();
-        });
-      })();
+      // Reagit a une session deja persistee (retour sur la page apres
+      // connexion, ou reouverture ulterieure) - la connexion initiale
+      // elle-meme se fait via signInWithPopup, gere dans le handler
+      // signInBtn ci-dessus.
+      onAuthStateChanged(auth, async (user) => {
+        await refreshAuthUI();
+        handleShare();
+        if (user) refreshCurrentList();
+      });
     </script>
   </body>
 </html>
