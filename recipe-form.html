@@ -72,6 +72,9 @@
     <label for="recipe-name">Nom de la recette</label>
     <input type="text" id="recipe-name" placeholder="Ex: Pates à la carbonara" />
 
+    <label for="recipe-url">Lien</label>
+    <input type="url" id="recipe-url" placeholder="https://..." />
+
     <label for="recipe-ingredients">Ingredients (un par ligne)</label>
     <textarea id="recipe-ingredients" placeholder="200g de pates&#10;2 oeufs&#10;100g de parmesan"></textarea>
     <p class="hint">Modifie/complete librement avant d'enregistrer.</p>
@@ -88,22 +91,22 @@
       const DRAFT_KEY = "recipeDraft";
       const statusEl = document.getElementById("status");
       const nameInput = document.getElementById("recipe-name");
+      const urlInput = document.getElementById("recipe-url");
       const ingredientsTextarea = document.getElementById("recipe-ingredients");
       const saveBtn = document.getElementById("save-recipe");
-
-      let sourceUrl = null;
 
       // Pre-remplissage depuis une extraction faite par index.html (lien
       // partage) - stocke via localStorage plutot que des parametres
       // d'URL, une liste d'ingredients pouvant depasser la longueur
-      // raisonnable d'une URL.
+      // raisonnable d'une URL. Le champ Lien reste modifiable/effacable
+      // par l'utilisateur (recette manuelle, ou lien different souhaite).
       try {
         const raw = localStorage.getItem(DRAFT_KEY);
         if (raw) {
           const draft = JSON.parse(raw);
           nameInput.value = draft.name || "";
+          urlInput.value = draft.sourceUrl || "";
           ingredientsTextarea.value = (draft.ingredients || []).join("\n");
-          sourceUrl = draft.sourceUrl || null;
           if (draft.message) statusEl.textContent = draft.message;
           localStorage.removeItem(DRAFT_KEY);
         }
@@ -142,7 +145,11 @@
         saveBtn.disabled = true;
         statusEl.textContent = "Enregistrement...";
         try {
-          await saveRecipe(groupId, user, { name: nameInput.value, ingredients, sourceUrl });
+          await saveRecipe(groupId, user, {
+            name: nameInput.value,
+            ingredients,
+            sourceUrl: urlInput.value.trim() || null,
+          });
           location.href = "recipes.html";
         } catch (err) {
           statusEl.textContent = "Erreur : " + err.message;
