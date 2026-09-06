@@ -430,20 +430,25 @@
       });
 
       (async () => {
+        let redirectError = null;
         try {
           await getRedirectResult(auth);
         } catch (err) {
-          statusEl.textContent = "Erreur de connexion : " + err.message;
+          redirectError = err;
         }
 
         onAuthStateChanged(auth, async (user) => {
           await refreshAuthUI();
-          if (user) {
-            handleShare();
-            refreshCurrentList();
-          } else {
-            handleShare();
+          // Ne pas laisser handleShare() ecraser un message d'erreur reel
+          // de la redirection avec son texte generique "Connecte-toi...".
+          if (redirectError) {
+            statusEl.textContent =
+              "Erreur de connexion (" + redirectError.code + ") : " + redirectError.message;
+            redirectError = null;
+            return;
           }
+          handleShare();
+          if (user) refreshCurrentList();
         });
       })();
     </script>
