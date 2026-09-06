@@ -79,6 +79,12 @@
         background: #9bbfa8;
         cursor: default;
       }
+      button.secondary {
+        background: #555;
+      }
+      button.secondary:disabled {
+        background: #aaa;
+      }
     </style>
   </head>
   <body>
@@ -150,6 +156,23 @@
               }
             });
             li.appendChild(addBtn);
+
+            const editBtn = document.createElement("button");
+            editBtn.textContent = "Modifier";
+            editBtn.className = "secondary";
+            editBtn.addEventListener("click", () => {
+              localStorage.setItem(
+                "recipeDraft",
+                JSON.stringify({
+                  id: recipe.id,
+                  name: recipe.name,
+                  sourceUrl: recipe.sourceUrl || null,
+                  ingredients,
+                })
+              );
+              location.href = "recipe-form.html";
+            });
+            li.appendChild(editBtn);
 
             listEl.appendChild(li);
           });

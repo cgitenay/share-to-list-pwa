@@ -4,6 +4,8 @@ import { db } from "./firebase-init.js";
 import {
   collection,
   addDoc,
+  doc,
+  updateDoc,
   getDocs,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -25,6 +27,14 @@ export async function saveRecipe(groupId, user, { name, ingredients, sourceUrl }
     sourceUrl: sourceUrl || null,
     createdBy: user.uid,
     createdAt: serverTimestamp(),
+  });
+}
+
+export async function updateRecipe(groupId, recipeId, { name, ingredients, sourceUrl }) {
+  await updateDoc(doc(db, "groups", groupId, "recipes", recipeId), {
+    name: (name || "").trim() || "Recette sans nom",
+    ingredients,
+    sourceUrl: sourceUrl || null,
   });
 }
 

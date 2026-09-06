@@ -86,7 +86,7 @@
       import { auth } from "./firebase-init.js";
       import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
       import { getActiveGroupId } from "./groups.js";
-      import { saveRecipe } from "./recipes.js";
+      import { saveRecipe, updateRecipe } from "./recipes.js";
 
       const DRAFT_KEY = "recipeDraft";
       const statusEl = document.getElementById("status");
@@ -95,11 +95,17 @@
       const ingredientsTextarea = document.getElementById("recipe-ingredients");
       const saveBtn = document.getElementById("save-recipe");
 
+      // Present (recette.id) quand on arrive depuis le bouton "Modifier"
+      // de recipes.html - dans ce cas Enregistrer met a jour le document
+      // existant au lieu d'en creer un nouveau.
+      let editingId = null;
+
       // Pre-remplissage depuis une extraction faite par index.html (lien
-      // partage) - stocke via localStorage plutot que des parametres
-      // d'URL, une liste d'ingredients pouvant depasser la longueur
-      // raisonnable d'une URL. Le champ Lien reste modifiable/effacable
-      // par l'utilisateur (recette manuelle, ou lien different souhaite).
+      // partage) ou depuis une recette existante (edition) - stocke via
+      // localStorage plutot que des parametres d'URL, une liste
+      // d'ingredients pouvant depasser la longueur raisonnable d'une URL.
+      // Le champ Lien reste modifiable/effacable par l'utilisateur (recette
+      // manuelle, ou lien different souhaite).
       try {
         const raw = localStorage.getItem(DRAFT_KEY);
         if (raw) {
@@ -108,6 +114,10 @@
           urlInput.value = draft.sourceUrl || "";
           ingredientsTextarea.value = (draft.ingredients || []).join("\n");
           if (draft.message) statusEl.textContent = draft.message;
+          if (draft.id) {
+            editingId = draft.id;
+            saveBtn.textContent = "Enregistrer les modifications";
+          }
           localStorage.removeItem(DRAFT_KEY);
         }
       } catch (err) {
@@ -145,11 +155,16 @@
         saveBtn.disabled = true;
         statusEl.textContent = "Enregistrement...";
         try {
-          await saveRecipe(groupId, user, {
+          const data = {
             name: nameInput.value,
             ingredients,
             sourceUrl: urlInput.value.trim() || null,
-          });
+          };
+          if (editingId) {
+            await updateRecipe(groupId, editingId, data);
+          } else {
+            await saveRecipe(groupId, user, data);
+          }
           location.href = "recipes.html";
         } catch (err) {
           statusEl.textContent = "Erreur : " + err.message;
