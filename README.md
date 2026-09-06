@@ -56,3 +56,11 @@ que Android).
   (cloisonnement de stockage ITP) - non teste faute d'iPhone disponible ;
   si la connexion echoue systematiquement sur iPhone, ouvrir la page dans
   Safari (hors PWA installee) en contournement possible.
+- **Confirme sur Android/Chrome** : Google bloque volontairement
+  l'affichage de son ecran de connexion dans une PWA installee en mode
+  standalone (mesure anti-phishing) - la page de connexion se coupe
+  avant d'avoir fini de charger. La premiere connexion doit se faire
+  dans un onglet Chrome normal (coller l'URL de la page, pas l'icone
+  installee) ; l'app affiche desormais ce message si elle detecte le
+  mode standalone. La session est ensuite retrouvee automatiquement
+  dans l'app installee (meme profil Chrome, storage partage).

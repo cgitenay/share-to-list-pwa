@@ -331,6 +331,23 @@
       }
 
       signInBtn.addEventListener("click", async () => {
+        // Google bloque volontairement l'affichage de son ecran de
+        // connexion dans une PWA installee en mode standalone (mesure
+        // anti-phishing, pas un bug corrigeable ici) : la page de
+        // connexion se coupe avant d'avoir fini de charger. Il faut
+        // ouvrir cette page dans un onglet Chrome normal pour se
+        // connecter la premiere fois - la session est ensuite retrouvee
+        // automatiquement dans l'app installee (meme profil Chrome).
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+        if (isStandalone) {
+          statusEl.textContent =
+            "Google bloque la connexion dans l'appli installee. Ouvre " +
+            location.href.split("?")[0] +
+            " dans un onglet Chrome normal (pas l'icone installee), " +
+            "connecte-toi une fois, puis reviens ici.";
+          return;
+        }
+
         signInBtn.disabled = true;
         statusEl.textContent = "Redirection vers Google...";
         try {
