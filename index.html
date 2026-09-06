@@ -112,11 +112,13 @@
         text-decoration: none;
         font-size: 14px;
       }
-      #group-section {
+      #group-section,
+      #account-section {
         margin-top: 24px;
         text-align: left;
       }
-      #group-section summary {
+      #group-section summary,
+      #account-section summary {
         font-size: 15px;
         font-weight: bold;
         cursor: pointer;
@@ -126,13 +128,6 @@
   <body>
     <h1>Partager vers ma liste</h1>
     <div id="status">Chargement...</div>
-
-    <section>
-      <h2>Compte</h2>
-      <div id="auth-status">Non connecte.</div>
-      <button id="sign-in">Se connecter avec Google</button>
-      <button id="sign-out" class="secondary" hidden>Se deconnecter</button>
-    </section>
 
     <section id="list-recipes-section" hidden>
       <h2>Recettes de cette liste</h2>
@@ -163,6 +158,13 @@
       <button id="join-group">Rejoindre avec ce code</button>
       <button id="invite-btn" class="secondary">Generer un code d'invitation</button>
       <div id="invite-code-display"></div>
+    </details>
+
+    <details id="account-section" open>
+      <summary>Compte</summary>
+      <div id="auth-status">Non connecte.</div>
+      <button id="sign-in">Se connecter avec Google</button>
+      <button id="sign-out" class="secondary" hidden>Se deconnecter</button>
     </details>
 
     <script src="matcher.js"></script>
