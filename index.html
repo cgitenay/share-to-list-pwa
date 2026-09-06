@@ -20,7 +20,8 @@
         font-size: 15px;
       }
       input,
-      button {
+      button,
+      select {
         width: 100%;
         box-sizing: border-box;
         padding: 10px;
@@ -35,10 +36,20 @@
         border: none;
         cursor: pointer;
       }
+      button.secondary {
+        background: #999;
+      }
+      button:disabled {
+        background: #9bb7ce;
+        cursor: default;
+      }
       h2 {
         font-size: 15px;
         text-align: left;
         margin: 24px 0 4px;
+      }
+      section {
+        text-align: left;
       }
       #current-list {
         list-style: none;
@@ -67,14 +78,14 @@
         flex-shrink: 0;
         padding: 10px 16px;
       }
-      details {
-        margin-top: 24px;
-        text-align: left;
-      }
-      details summary {
-        cursor: pointer;
+      #auth-status {
         font-size: 14px;
-        color: #555;
+      }
+      #invite-code-display {
+        margin-top: 8px;
+        font-size: 14px;
+        font-weight: bold;
+        word-break: break-all;
       }
     </style>
   </head>
@@ -82,29 +93,77 @@
     <h1>Partager vers ma liste</h1>
     <div id="status">Chargement...</div>
 
-    <h2>Ma liste actuelle</h2>
-    <button id="refresh-list">Actualiser</button>
-    <ul id="current-list"></ul>
+    <section>
+      <h2>Compte</h2>
+      <div id="auth-status">Non connecte.</div>
+      <button id="sign-in">Se connecter avec Google</button>
+      <button id="sign-out" class="secondary" hidden>Se deconnecter</button>
+    </section>
 
-    <h2>Ajouter un article</h2>
-    <div id="add-item-row">
-      <input type="text" id="new-item" placeholder="Ex: lait, 2x oeufs..." />
-      <button id="add-item">Ajouter</button>
-    </div>
+    <section id="group-section" hidden>
+      <h2>Groupe</h2>
+      <select id="group-select"></select>
+      <button id="create-group">Creer un nouveau groupe</button>
+      <input type="text" id="join-code" placeholder="Code d'invitation" />
+      <button id="join-group">Rejoindre avec ce code</button>
+      <button id="invite-btn" class="secondary">Generer un code d'invitation</button>
+      <div id="invite-code-display"></div>
+    </section>
 
-    <details id="setup">
-      <summary>Reglages du relais</summary>
-      <p>URL du relais Apps Script (verifie qu'elle est identique a celle
-      collee dans les Reglages de l'extension) :</p>
-      <input type="url" id="relay-url" placeholder="URL du Web App Apps Script" />
-      <button id="save-relay">Enregistrer</button>
-    </details>
+    <section>
+      <h2>Ma liste actuelle</h2>
+      <button id="refresh-list" class="secondary">Actualiser</button>
+      <ul id="current-list"></ul>
+    </section>
 
-    <script>
-      const STORAGE_KEY = "relayUrl";
+    <section>
+      <h2>Ajouter un article</h2>
+      <div id="add-item-row">
+        <input type="text" id="new-item" placeholder="Ex: lait, 2x oeufs..." />
+        <button id="add-item">Ajouter</button>
+      </div>
+    </section>
+
+    <script type="module">
+      import { auth, db } from "./firebase-init.js";
+      import {
+        GoogleAuthProvider,
+        signInWithRedirect,
+        getRedirectResult,
+        onAuthStateChanged,
+        signOut,
+      } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+      import {
+        collection,
+        addDoc,
+        getDocs,
+        query,
+        where,
+        serverTimestamp,
+      } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+      import {
+        myGroups,
+        createGroup,
+        createInvite,
+        joinGroupWithCode,
+        getGroupInfo,
+        getActiveGroupId,
+        setActiveGroupId,
+      } from "./groups.js";
+
+      const PENDING_SHARE_KEY = "pendingShare";
+
       const statusEl = document.getElementById("status");
-      const relayInput = document.getElementById("relay-url");
-      const saveBtn = document.getElementById("save-relay");
+      const authStatusEl = document.getElementById("auth-status");
+      const signInBtn = document.getElementById("sign-in");
+      const signOutBtn = document.getElementById("sign-out");
+      const groupSectionEl = document.getElementById("group-section");
+      const groupSelectEl = document.getElementById("group-select");
+      const createGroupBtn = document.getElementById("create-group");
+      const joinCodeInput = document.getElementById("join-code");
+      const joinGroupBtn = document.getElementById("join-group");
+      const inviteBtn = document.getElementById("invite-btn");
+      const inviteCodeDisplay = document.getElementById("invite-code-display");
       const currentListEl = document.getElementById("current-list");
       const refreshListBtn = document.getElementById("refresh-list");
       const newItemInput = document.getElementById("new-item");
@@ -114,96 +173,49 @@
         navigator.serviceWorker.register("sw.js").catch(() => {});
       }
 
+      // Le lien/texte partage arrive en parametres d'URL (share_target du
+      // manifest). On le range tout de suite dans localStorage : si
+      // l'utilisateur doit d'abord se connecter, signInWithRedirect quitte
+      // et revient sur cette page SANS ces parametres d'URL - seul un
+      // stockage local survit a l'aller-retour.
       const params = new URLSearchParams(location.search);
-      const shared = params.get("url") || params.get("text") || "";
-
-      function getRelayUrl() {
-        return localStorage.getItem(STORAGE_KEY);
+      const sharedNow = params.get("url") || params.get("text") || "";
+      if (sharedNow) {
+        localStorage.setItem(PENDING_SHARE_KEY, sharedNow);
       }
 
-      // GET avec les donnees dans l'URL plutot que POST : une requete
-      // POST vers un Web App Apps Script traverse une redirection interne
-      // (vers googleusercontent.com) que le navigateur suit en la
-      // transformant en GET et en supprimant son corps - le POST semblait
-      // reussir cote client mais Apps Script ne recevait jamais les
-      // donnees.
-      //
-      // Meme un fetch() GET classique est bloque par le CORS sur ce
-      // meme trajet de redirection (verifie : "Failed to fetch" sur cette
-      // page, alors qu'une simple navigation dans la barre d'adresse
-      // fonctionne - la navigation n'est jamais soumise au CORS,
-      // contrairement a fetch()). On ne peut donc lire aucune reponse
-      // cross-origin ici, avec ou sans "no-cors" - c'est une limite du
-      // navigateur, pas un bug corrigeable cote code. On envoie via une
-      // requete image (jamais soumise au CORS, technique eprouvee pour
-      // "envoyer sans lire la reponse"), et on l'assume dans le message
-      // affiche : succes d'envoi confirme, succes de traitement a
-      // verifier dans la liste partagee/le Sheet.
-      function sendToRelay(relayUrl, content, type) {
-        return new Promise((resolve) => {
-          const target =
-            relayUrl +
-            "?action=add&type=" + encodeURIComponent(type || "link") +
-            "&content=" + encodeURIComponent(content);
-          const img = new Image();
-          img.onload = () => resolve();
-          img.onerror = () => resolve(); // reponse JSON, pas une image : attendu, pas un echec
-          img.src = target;
-          setTimeout(resolve, 4000); // filet de securite
-        });
+      function shoppingItemsRef(groupId) {
+        return collection(db, "groups", groupId, "shoppingItems");
       }
 
-      // Lecture de la liste : contrairement a l'envoi, il faut ici
-      // pouvoir lire une vraie reponse (le contenu de la liste), pas
-      // juste confirmer un envoi a l'aveugle. Une balise <script src>
-      // n'est jamais soumise au CORS (comme les images), donc on utilise
-      // le classique JSONP : Apps Script renvoie "callback([...]);" en
-      // JavaScript plutot que du JSON brut, execute directement au
-      // chargement du script.
-      function fetchListViaJsonp(relayUrl) {
-        return new Promise((resolve, reject) => {
-          const callbackName = "cdlistCb" + Date.now();
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error("Timeout"));
-          }, 8000);
-
-          function cleanup() {
-            delete window[callbackName];
-            if (script.parentNode) script.parentNode.removeChild(script);
-            clearTimeout(timeout);
-          }
-
-          window[callbackName] = (data) => {
-            cleanup();
-            resolve(data);
-          };
-
-          const script = document.createElement("script");
-          script.src = relayUrl + "?action=list&callback=" + callbackName;
-          script.onerror = () => {
-            cleanup();
-            reject(new Error("Erreur de chargement"));
-          };
-          document.body.appendChild(script);
+      async function addSharedItem(groupId, user, type, content) {
+        await addDoc(shoppingItemsRef(groupId), {
+          type: type === "link" ? "link" : "item",
+          content,
+          status: "pending",
+          addedBy: user.uid,
+          createdAt: serverTimestamp(),
         });
       }
 
       async function refreshCurrentList() {
-        const relayUrl = getRelayUrl();
-        if (!relayUrl) {
-          currentListEl.innerHTML = "<li>Configure d'abord le relais ci-dessous.</li>";
+        const groupId = getActiveGroupId();
+        if (!auth.currentUser || !groupId) {
+          currentListEl.innerHTML = "<li>Connecte-toi et choisis un groupe.</li>";
           return;
         }
         currentListEl.innerHTML = "<li>Chargement...</li>";
         try {
-          const rows = await fetchListViaJsonp(relayUrl);
-          if (!rows || rows.length === 0) {
+          const snap = await getDocs(
+            query(shoppingItemsRef(groupId), where("status", "==", "pending"))
+          );
+          if (snap.empty) {
             currentListEl.innerHTML = "<li>Rien en attente.</li>";
             return;
           }
           currentListEl.innerHTML = "";
-          rows.forEach((r) => {
+          snap.forEach((d) => {
+            const r = d.data();
             const li = document.createElement("li");
             li.textContent = (r.type === "link" ? "🔗 " : "🛒 ") + r.content;
             currentListEl.appendChild(li);
@@ -216,17 +228,17 @@
       refreshListBtn.addEventListener("click", refreshCurrentList);
 
       addItemBtn.addEventListener("click", async () => {
-        const relayUrl = getRelayUrl();
+        const groupId = getActiveGroupId();
         const text = newItemInput.value.trim();
-        if (!relayUrl) {
-          statusEl.textContent = "Configure d'abord le relais ci-dessous.";
+        if (!auth.currentUser || !groupId) {
+          statusEl.textContent = "Connecte-toi et choisis un groupe d'abord.";
           return;
         }
         if (!text) return;
 
         addItemBtn.disabled = true;
         try {
-          await sendToRelay(relayUrl, text, "item");
+          await addSharedItem(groupId, auth.currentUser, "item", text);
           newItemInput.value = "";
           statusEl.textContent = "Article ajoute.";
           refreshCurrentList();
@@ -237,17 +249,20 @@
         }
       });
 
-      relayInput.value = getRelayUrl() || "";
-
       async function handleShare() {
-        const relayUrl = getRelayUrl();
-        if (!relayUrl) {
+        const shared = localStorage.getItem(PENDING_SHARE_KEY);
+        const groupId = getActiveGroupId();
+
+        if (!auth.currentUser) {
           statusEl.textContent = shared
-            ? "Configure d'abord le relais ci-dessous, puis repartage ce lien."
-            : "Configure le relais ci-dessous pour commencer.";
+            ? "Connecte-toi avec Google ci-dessous, puis reviens ici pour envoyer ce lien."
+            : "Connecte-toi avec Google pour commencer.";
           return;
         }
-
+        if (!groupId) {
+          statusEl.textContent = "Cree ou rejoins un groupe ci-dessous.";
+          return;
+        }
         if (!shared) {
           statusEl.textContent = "Aucun lien recu. Ouvre cette page depuis le menu \"Partager\" d'une appli.";
           return;
@@ -255,24 +270,165 @@
 
         statusEl.textContent = "Envoi...";
         try {
-          await sendToRelay(relayUrl, shared);
-          statusEl.textContent = "Envoye - verifie ta liste partagee pour confirmer.";
+          await addSharedItem(groupId, auth.currentUser, "link", shared);
+          localStorage.removeItem(PENDING_SHARE_KEY);
+          statusEl.textContent = "Envoye - visible dans ta liste ci-dessous et dans l'extension.";
+          refreshCurrentList();
         } catch (err) {
           statusEl.textContent = "Erreur : " + err.message;
         }
       }
 
-      saveBtn.addEventListener("click", () => {
-        const url = relayInput.value.trim();
-        if (!url) return;
-        localStorage.setItem(STORAGE_KEY, url);
-        statusEl.textContent = "URL enregistree.";
-        handleShare();
+      // =====================================================================
+      // Compte et groupe (Firebase Authentication + Firestore)
+      // =====================================================================
+
+      async function refreshAuthUI() {
+        const user = auth.currentUser;
+        if (!user) {
+          authStatusEl.textContent = "Non connecte.";
+          signInBtn.hidden = false;
+          signOutBtn.hidden = true;
+          groupSectionEl.hidden = true;
+          return;
+        }
+
+        authStatusEl.textContent = "Connecte : " + (user.displayName || user.email || user.uid);
+        signInBtn.hidden = true;
+        signOutBtn.hidden = false;
+        groupSectionEl.hidden = false;
+        await refreshGroupList();
+      }
+
+      async function refreshGroupList() {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const groups = await myGroups(user.uid);
+        groupSelectEl.innerHTML = "";
+
+        if (groups.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "Aucun groupe - cree ou rejoins-en un";
+          groupSelectEl.appendChild(opt);
+          return;
+        }
+
+        const activeId = getActiveGroupId();
+        for (const g of groups) {
+          const info = await getGroupInfo(g.groupId);
+          const opt = document.createElement("option");
+          opt.value = g.groupId;
+          opt.textContent = (info && info.name) || g.groupId;
+          if (g.groupId === activeId) opt.selected = true;
+          groupSelectEl.appendChild(opt);
+        }
+
+        if (!activeId) {
+          setActiveGroupId(groups[0].groupId);
+        }
+      }
+
+      signInBtn.addEventListener("click", async () => {
+        signInBtn.disabled = true;
+        statusEl.textContent = "Redirection vers Google...";
+        try {
+          await signInWithRedirect(auth, new GoogleAuthProvider());
+        } catch (err) {
+          statusEl.textContent = "Erreur de connexion : " + err.message;
+          signInBtn.disabled = false;
+        }
+      });
+
+      signOutBtn.addEventListener("click", async () => {
+        await signOut(auth);
+        await refreshAuthUI();
+        statusEl.textContent = "Deconnecte.";
+      });
+
+      groupSelectEl.addEventListener("change", async () => {
+        if (!groupSelectEl.value) return;
+        setActiveGroupId(groupSelectEl.value);
+        statusEl.textContent = "Groupe actif change.";
+        inviteCodeDisplay.textContent = "";
         refreshCurrentList();
       });
 
-      handleShare();
-      refreshCurrentList();
+      createGroupBtn.addEventListener("click", async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const name = prompt("Nom du groupe ?", "Ma liste");
+        if (name === null) return;
+
+        createGroupBtn.disabled = true;
+        try {
+          const groupId = await createGroup(user, name);
+          setActiveGroupId(groupId);
+          await refreshGroupList();
+          statusEl.textContent = "Groupe cree.";
+          handleShare();
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        } finally {
+          createGroupBtn.disabled = false;
+        }
+      });
+
+      joinGroupBtn.addEventListener("click", async () => {
+        const user = auth.currentUser;
+        const code = joinCodeInput.value.trim();
+        if (!user || !code) return;
+
+        joinGroupBtn.disabled = true;
+        try {
+          const groupId = await joinGroupWithCode(user, code);
+          setActiveGroupId(groupId);
+          await refreshGroupList();
+          joinCodeInput.value = "";
+          statusEl.textContent = "Groupe rejoint.";
+          handleShare();
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        } finally {
+          joinGroupBtn.disabled = false;
+        }
+      });
+
+      inviteBtn.addEventListener("click", async () => {
+        const user = auth.currentUser;
+        const groupId = getActiveGroupId();
+        if (!user || !groupId) return;
+
+        inviteBtn.disabled = true;
+        try {
+          const code = await createInvite(user, groupId);
+          inviteCodeDisplay.textContent = "Code : " + code;
+        } catch (err) {
+          statusEl.textContent = "Erreur : " + err.message;
+        } finally {
+          inviteBtn.disabled = false;
+        }
+      });
+
+      (async () => {
+        try {
+          await getRedirectResult(auth);
+        } catch (err) {
+          statusEl.textContent = "Erreur de connexion : " + err.message;
+        }
+
+        onAuthStateChanged(auth, async (user) => {
+          await refreshAuthUI();
+          if (user) {
+            handleShare();
+            refreshCurrentList();
+          } else {
+            handleShare();
+          }
+        });
+      })();
     </script>
   </body>
 </html>
