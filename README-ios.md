@@ -1,77 +1,69 @@
 # Partager vers ma liste (iPhone)
 
-iOS Safari ne supporte pas l'API Web Share Target utilisee pour Android
-(la PWA ne peut pas s'inscrire dans le menu Partager natif). Deux
-mecanismes distincts couvrent les memes besoins sur iPhone :
+iOS Safari ne supporte pas l'API Web Share Target utilisee sur Android
+(la PWA ne peut pas s'inscrire dans le menu Partager natif). Le partage
+passe donc par un raccourci de l'appli **Raccourcis**, qui ouvre la page
+dans Safari avec le lien en parametre.
 
-- **Consulter la liste / ajouter un article a la main** -> la PWA
-  existante (`index.html`), qui fonctionne sans aucune modification.
-- **Partager un lien (TikTok/Instagram/YouTube) en un tap** -> un
-  raccourci dans l'appli **Raccourcis**, native a iOS.
+## 0. Configuration Google (une seule fois)
 
-## 1. Consulter la liste / ajouter un article - via la PWA
+La connexion sur iPhone n'utilise pas la popup Firebase (bloquee par
+Safari) mais une redirection directe vers Google. Il faut donc autoriser
+l'adresse de la page :
 
-1. Ouvre l'URL HTTPS de la PWA (meme lien que pour Android) dans Safari.
-2. Bouton Partager de Safari -> "Sur l'ecran d'accueil".
-3. Ouvre l'appli une premiere fois, colle l'URL de ton relais Apps Script
-   dans le champ propose, "Enregistrer" - retenue sur cet iPhone
-   (`localStorage`, propre a cet appareil).
-4. "Ma liste actuelle" (bouton Actualiser) et "Ajouter un article"
-   fonctionnent normalement, identiques a la version Android.
+1. Google Cloud Console -> APIs et services -> Identifiants -> ouvre le
+   client OAuth "Application Web" utilise par l'extension
+   (`56140235809-gu0ml3760...`).
+2. "URI de redirection autorises" -> ajoute exactement :
+   `https://cgitenay.github.io/share-to-list-pwa/` (avec le `/` final).
+3. Enregistre (peut prendre quelques minutes a etre pris en compte).
+
+## 1. Se connecter
+
+**Important** : sur iPhone, une appli ajoutee a l'ecran d'accueil a un
+stockage **completement separe de Safari** - se connecter dans Safari
+puis installer l'appli ne transfere pas la session.
+
+- **Dans Safari** : ouvre l'URL de la page, "Compte" -> "Se connecter avec
+  Google". Tu es redirige vers Google puis ramene ici, connecte. La
+  session est conservee par Safari.
+- **Dans l'appli installee** : essaie "Se connecter avec Google". Si Google
+  affiche une erreur (il refuse parfois de s'afficher dans une appli
+  installee), ferme l'appli et utilise le transfert par code :
+  1. Dans Safari, connecte-toi. Un "code de connexion" s'affiche dans
+     "Compte" : bouton "Copier le code".
+  2. Ouvre l'appli installee, "Compte" -> colle le code -> "Se connecter
+     avec ce code". La session de l'appli est ensuite independante et
+     persistante (le code, valable ~1 h, n'est utilise qu'une fois).
+
+Utiliser Safari seul (sans installer l'appli) est la voie la plus simple
+sur iPhone.
 
 ## 2. Partager un lien - via l'appli Raccourcis
 
-L'appli Raccourcis (deja installee sur tout iPhone) peut apparaitre dans
-le menu Partager systeme de n'importe quelle appli, et appeler
-directement le relais - sans les soucis de CORS rencontres cote
-navigateur (Raccourcis n'est pas un navigateur, aucune restriction CORS
-ne s'applique a ses requetes).
+1. Ouvre **Raccourcis** -> "+" (nouveau raccourci), nomme-le par exemple
+   "Ajouter a ma liste".
+2. Ajoute l'action **"Encoder l'URL"** (ou "URL Encode" ) sur l'**Entree
+   du raccourci** (variable magique).
+3. Ajoute l'action **"Texte"** avec :
+   `https://cgitenay.github.io/share-to-list-pwa/?url=` suivi de la
+   variable magique **"URL codee"** (resultat de l'action precedente).
+4. Ajoute l'action **"Ouvrir les URL"** sur ce texte.
+5. Reglages du raccourci (icone (i)) : active **"Afficher dans le
+   partage"**, types acceptes : **URLs** et **Texte**.
 
-### Construction du raccourci
-
-1. Ouvre l'appli **Raccourcis** -> onglet Raccourcis -> "+" (nouveau
-   raccourci).
-2. Renomme-le, par exemple "Ajouter a ma liste" (icone/nom en haut).
-3. Ajoute l'action **"URL"** (rechercher "URL" dans la liste d'actions) :
-   - Dans son champ, saisis : `TON_URL_DE_RELAIS?action=add&type=link&content=`
-     (remplace `TON_URL_DE_RELAIS` par l'URL de ton Web App Apps Script,
-     identique a celle configuree dans l'extension).
-4. Juste apres, insere la **"Entree du raccourci"** (variable magique,
-   icone bleue en bas du clavier) a la fin de cette meme URL - c'est elle
-   qui contiendra le lien partage. Le resultat doit ressembler a une
-   seule ligne : `https://.../exec?action=add&type=link&content=` suivi
-   du chip "Entree du raccourci".
-5. Ajoute l'action **"Obtenir le contenu de l'URL"** : methode **GET**,
-   URL = le resultat de l'action precedente (elle devrait etre
-   selectionnee automatiquement, sinon choisis-la via la variable
-   magique).
-6. (Optionnel) Ajoute **"Afficher une notification"** avec un texte du
-   type "Envoye a la liste !", pour avoir une confirmation visuelle.
-7. Termine, puis ouvre les **reglages du raccourci** (icone (i) ou
-   trois points) :
-   - Active **"Afficher dans le partage"**.
-   - Types de contenu accepte : coche **URLs** et **Texte**.
-8. Enregistre.
-
-### Utilisation
-
-Depuis TikTok/Instagram/YouTube/Safari, partage un lien -> le raccourci
-"Ajouter a ma liste" apparait dans la feuille de partage -> le lien est
-envoye directement au relais, sans repasser par l'extension a ce
-moment-la (il apparaitra "en attente" dans son popup au prochain sync,
-exactement comme sur Android).
+Depuis TikTok/Instagram/YouTube/Safari, partage un lien -> choisis
+"Ajouter a ma liste" -> Safari s'ouvre sur la page, qui extrait la recette
+et ouvre le formulaire (il faut etre connecte dans **Safari** - voir
+section 1 - et avoir choisi un groupe).
 
 ## Limites
 
-- Deux mecanismes separes (PWA pour consulter/ajouter, Raccourcis pour
-  partager) plutot qu'une seule appli comme sur Android - consequence de
-  la limite iOS sur les PWA, pas contournable autrement sans publier une
-  vraie application sur l'App Store.
-- L'URL du relais est saisie deux fois (une fois dans la PWA, une fois en
-  dur dans le raccourci) - a mettre a jour aux deux endroits si tu
-  redeployes un nouveau relais.
-- Non teste sur un appareil physique au moment de la redaction (pas de
-  Mac/iPhone disponibles) - instructions basees sur le comportement
-  documente et stable de Raccourcis depuis plusieurs versions d'iOS. A
-  valider sur un vrai iPhone (ou via un service de test a distance type
-  BrowserStack) avant de considerer ce chemin comme fiable.
+- Le raccourci ouvre toujours Safari (iOS n'ouvre jamais une appli
+  installee depuis un lien) : la connexion utilisee est donc celle de
+  Safari, pas celle de l'appli installee.
+- Safari peut effacer les donnees d'un site non utilise pendant ~7 jours
+  (ITP) : il faudra alors se reconnecter.
+- Non teste de bout en bout sur un iPhone par l'assistant : la redirection
+  Google directe et le transfert par code reposent sur le comportement
+  documente de Safari/WebKit.

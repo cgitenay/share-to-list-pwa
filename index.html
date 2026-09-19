@@ -157,6 +157,18 @@
         font-weight: bold;
         cursor: pointer;
       }
+      #account-section .hint {
+        font-size: 12px;
+        color: #666;
+        margin: 12px 0 0;
+      }
+      #account-section textarea {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 8px;
+        font-size: 11px;
+        word-break: break-all;
+      }
     </style>
   </head>
   <body>
@@ -199,6 +211,26 @@
       <div id="auth-status">Non connecte.</div>
       <button id="sign-in">Se connecter avec Google</button>
       <button id="sign-out" class="secondary" hidden>Se deconnecter</button>
+
+      <div id="login-code-in" hidden>
+        <p class="hint">
+          iPhone : l'appli installee a un stockage separe de Safari, et Google
+          refuse parfois de s'afficher dedans. Si le bouton ci-dessus
+          echoue, ouvre cette page dans Safari, connecte-toi, copie le "code
+          de connexion" affiche, puis colle-le ici.
+        </p>
+        <input type="text" id="login-code-input" placeholder="Code de connexion copie depuis Safari" />
+        <button id="login-code-btn">Se connecter avec ce code</button>
+      </div>
+
+      <div id="login-code-out" hidden>
+        <p class="hint">
+          Pour connecter l'appli installee sur cet iPhone : copie ce code
+          (valable environ 1 h), ouvre l'appli, colle-le dans "Compte".
+        </p>
+        <textarea id="login-code-text" readonly rows="3"></textarea>
+        <button id="login-code-copy" class="secondary">Copier le code</button>
+      </div>
     </details>
 
     <script src="matcher.js"></script>
@@ -207,6 +239,7 @@
       import {
         GoogleAuthProvider,
         signInWithPopup,
+        signInWithCredential,
         onAuthStateChanged,
         signOut,
       } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
@@ -233,11 +266,42 @@
 
       const PENDING_SHARE_KEY = "pendingShare";
       const RECIPE_DRAFT_KEY = "recipeDraft";
+      const OAUTH_STATE_KEY = "oauthState";
+
+      // Client OAuth "Application Web" (meme que celui de l'extension) dont
+      // l'URI de redirection autorisee doit inclure l'URL de cette page
+      // (voir README-ios.md). Utilise uniquement pour la connexion directe
+      // par redirection sur iOS/Safari.
+      const OAUTH_CLIENT_ID =
+        "56140235809-gu0ml3760sbkj8nhumldu6hbqu3g1j67.apps.googleusercontent.com";
+
+      const ua = navigator.userAgent;
+      const isIOS =
+        /iPad|iPhone|iPod/.test(ua) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isSafariDesktop = !isIOS && /^((?!chrome|chromium|android).)*safari/i.test(ua);
+      // Sur iOS tous les navigateurs (Chrome inclus) reposent sur WebKit et
+      // partagent les memes limites de stockage tiers que Safari.
+      const useRedirectFlow = isIOS || isSafariDesktop;
+      const isStandalone =
+        window.navigator.standalone === true ||
+        window.matchMedia("(display-mode: standalone)").matches;
+
+      // Jeton d'acces de la connexion qui vient d'avoir lieu dans cet
+      // onglet (jamais persiste) - sert a generer le code de transfert
+      // vers l'appli installee.
+      let freshAccessToken = null;
 
       const statusEl = document.getElementById("status");
       const authStatusEl = document.getElementById("auth-status");
       const signInBtn = document.getElementById("sign-in");
       const signOutBtn = document.getElementById("sign-out");
+      const loginCodeInBox = document.getElementById("login-code-in");
+      const loginCodeInput = document.getElementById("login-code-input");
+      const loginCodeBtn = document.getElementById("login-code-btn");
+      const loginCodeOutBox = document.getElementById("login-code-out");
+      const loginCodeText = document.getElementById("login-code-text");
+      const loginCodeCopyBtn = document.getElementById("login-code-copy");
       const groupSectionEl = document.getElementById("group-section");
       const groupSelectEl = document.getElementById("group-select");
       const createGroupBtn = document.getElementById("create-group");
@@ -506,6 +570,14 @@
 
       async function refreshAuthUI() {
         const user = auth.currentUser;
+
+        // Saisie d'un code : uniquement dans l'appli installee sur iOS,
+        // tant qu'on n'est pas connecte. Affichage du code : uniquement
+        // dans un onglet Safari juste apres une connexion reussie.
+        loginCodeInBox.hidden = !(isIOS && isStandalone && !user);
+        loginCodeOutBox.hidden = !(isIOS && !isStandalone && user && freshAccessToken);
+        if (!loginCodeOutBox.hidden) loginCodeText.value = freshAccessToken;
+
         if (!user) {
           authStatusEl.textContent = "Non connecte.";
           signInBtn.hidden = false;
@@ -519,6 +591,66 @@
         signOutBtn.hidden = false;
         groupSectionEl.hidden = false;
         await refreshGroupList();
+      }
+
+      // Connexion Google directe, sans passer par le relais cross-origin de
+      // Firebase (iframe firebaseapp.com, bloquee par Safari/ITP : ni la
+      // popup ni la redirection Firebase ne peuvent y rendre leur resultat).
+      // Redirection pleine page vers Google, retour ici avec le jeton dans
+      // le fragment d'URL, puis echange contre une session Firebase.
+      function redirectBaseUrl() {
+        return location.origin + location.pathname.replace(/index\.html$/, "");
+      }
+
+      function startGoogleRedirectSignIn() {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        const state = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+        localStorage.setItem(OAUTH_STATE_KEY, state);
+
+        location.href =
+          "https://accounts.google.com/o/oauth2/v2/auth" +
+          "?client_id=" + encodeURIComponent(OAUTH_CLIENT_ID) +
+          "&redirect_uri=" + encodeURIComponent(redirectBaseUrl()) +
+          "&response_type=token" +
+          "&scope=" + encodeURIComponent("openid email profile") +
+          "&prompt=select_account" +
+          "&state=" + state;
+      }
+
+      async function completeRedirectSignIn() {
+        if (!location.hash) return;
+        const hash = new URLSearchParams(location.hash.slice(1));
+        const accessToken = hash.get("access_token");
+        const oauthError = hash.get("error");
+        if (!accessToken && !oauthError) return;
+
+        history.replaceState(null, "", redirectBaseUrl());
+        const expectedState = localStorage.getItem(OAUTH_STATE_KEY);
+        localStorage.removeItem(OAUTH_STATE_KEY);
+
+        if (oauthError) {
+          setAuthNotice("Connexion Google refusee : " + oauthError);
+          return;
+        }
+        if (!expectedState || hash.get("state") !== expectedState) {
+          setAuthNotice("Connexion annulee (verification de securite echouee) - reessaie.");
+          return;
+        }
+
+        try {
+          freshAccessToken = accessToken;
+          await signInWithCredential(auth, GoogleAuthProvider.credential(null, accessToken));
+          statusEl.textContent = "Connecte.";
+        } catch (err) {
+          freshAccessToken = null;
+          setAuthNotice("Erreur de connexion (" + err.code + ") : " + err.message);
+        }
+      }
+
+      let authNotice = null;
+      function setAuthNotice(message) {
+        authNotice = message;
+        statusEl.textContent = message;
       }
 
       async function refreshGroupList() {
@@ -552,14 +684,19 @@
       }
 
       signInBtn.addEventListener("click", async () => {
-        // Google bloque volontairement l'affichage de son ecran de
-        // connexion dans une PWA installee en mode standalone (mesure
+        if (useRedirectFlow) {
+          statusEl.textContent = "Redirection vers Google...";
+          startGoogleRedirectSignIn();
+          return;
+        }
+
+        // Android : Google bloque volontairement l'affichage de son ecran
+        // de connexion dans une PWA installee en mode standalone (mesure
         // anti-phishing, pas un bug corrigeable ici) : la page de
         // connexion se coupe avant d'avoir fini de charger. Il faut
         // ouvrir cette page dans un onglet Chrome normal pour se
         // connecter la premiere fois - la session est ensuite retrouvee
         // automatiquement dans l'app installee (meme profil Chrome).
-        const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
         if (isStandalone) {
           statusEl.textContent =
             "Google bloque la connexion dans l'appli installee. Ouvre " +
@@ -588,6 +725,31 @@
           statusEl.textContent = "Erreur de connexion (" + err.code + ") : " + err.message;
         } finally {
           signInBtn.disabled = false;
+        }
+      });
+
+      loginCodeBtn.addEventListener("click", async () => {
+        const token = loginCodeInput.value.trim();
+        if (!token) return;
+        loginCodeBtn.disabled = true;
+        try {
+          await signInWithCredential(auth, GoogleAuthProvider.credential(null, token));
+          loginCodeInput.value = "";
+          statusEl.textContent = "Connecte.";
+        } catch (err) {
+          statusEl.textContent = "Code invalide ou expire (" + err.code + ") - regenere-le dans Safari.";
+        } finally {
+          loginCodeBtn.disabled = false;
+        }
+      });
+
+      loginCodeCopyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(loginCodeText.value);
+          loginCodeCopyBtn.textContent = "Copie !";
+        } catch (err) {
+          loginCodeText.select();
+          statusEl.textContent = "Copie manuelle : appuie longuement sur le code selectionne.";
         }
       });
 
@@ -664,13 +826,19 @@
 
       // Reagit a une session deja persistee (retour sur la page apres
       // connexion, ou reouverture ulterieure) - la connexion initiale
-      // elle-meme se fait via signInWithPopup, gere dans le handler
-      // signInBtn ci-dessus.
+      // elle-meme se fait via signInWithPopup ou la redirection directe,
+      // geres dans le handler signInBtn ci-dessus.
       onAuthStateChanged(auth, async (user) => {
         await refreshAuthUI();
         handleShare();
+        // handleShare() ecrase #status ("Connecte-toi...") de facon
+        // synchrone quand on n'est pas connecte : on remet l'erreur
+        // eventuelle du retour de redirection par-dessus.
+        if (!user && authNotice) statusEl.textContent = authNotice;
         if (user) refreshCurrentList();
       });
+
+      completeRedirectSignIn();
     </script>
   </body>
 </html>
