@@ -6,6 +6,7 @@ import {
   addDoc,
   doc,
   updateDoc,
+  deleteDoc,
   getDocs,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -36,6 +37,10 @@ export async function updateRecipe(groupId, recipeId, { name, ingredients, sourc
     ingredients,
     sourceUrl: sourceUrl || null,
   });
+}
+
+export function deleteRecipe(groupId, recipeId) {
+  return deleteDoc(doc(db, "groups", groupId, "recipes", recipeId));
 }
 
 export async function listRecipes(groupId) {

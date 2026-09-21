@@ -32,10 +32,17 @@
         font-size: 14px;
       }
       a.back {
-        display: inline-block;
-        margin-top: 16px;
-        font-size: 13px;
-        color: #555;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: block;
+        margin: -24px -20px 0;
+        padding: 12px 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+        color: #0056a3;
+        text-decoration: none;
       }
       ul {
         list-style: none;
@@ -85,20 +92,23 @@
       button.secondary:disabled {
         background: #aaa;
       }
+      button.danger {
+        background: #d9534f;
+      }
     </style>
   </head>
   <body>
+    <a class="back" href="index.html">&larr; Retour</a>
     <h1>Mes recettes</h1>
     <div id="status">Chargement...</div>
     <a class="new-recipe" href="recipe-form.html">+ Nouvelle recette</a>
     <ul id="recipe-list"></ul>
-    <a class="back" href="index.html">&larr; Retour</a>
 
     <script type="module">
       import { auth } from "./firebase-init.js";
       import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
       import { getActiveGroupId } from "./groups.js";
-      import { listRecipes, addRecipeIngredientsToList } from "./recipes.js";
+      import { listRecipes, addRecipeIngredientsToList, deleteRecipe } from "./recipes.js";
 
       const statusEl = document.getElementById("status");
       const listEl = document.getElementById("recipe-list");
@@ -173,6 +183,25 @@
               location.href = "recipe-form.html";
             });
             li.appendChild(editBtn);
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.textContent = "Supprimer";
+            deleteBtn.className = "danger";
+            deleteBtn.addEventListener("click", async () => {
+              if (!confirm("Supprimer la recette \"" + recipe.name + "\" ?")) return;
+              deleteBtn.disabled = true;
+              try {
+                await deleteRecipe(groupId, recipe.id);
+                li.remove();
+                if (!listEl.querySelector("li")) {
+                  statusEl.textContent = "Aucune recette enregistree pour l'instant.";
+                }
+              } catch (err) {
+                statusEl.textContent = "Erreur : " + err.message;
+                deleteBtn.disabled = false;
+              }
+            });
+            li.appendChild(deleteBtn);
 
             listEl.appendChild(li);
           });
